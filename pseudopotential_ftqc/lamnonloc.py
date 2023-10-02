@@ -1,11 +1,21 @@
 import os
-os.environ['MKL_NUM_THREADS'] = str(30)
+
+try:
+    mkl_num_threads = os.environ.get('MKL_NUM_THREADS')
+    os.environ['MKL_NUM_THREADS'] = mkl_num_threads
+    omp_num_threads = os.environ.get('OMP_NUM_THREADS')
+    os.environ['OMP_NUM_THREADS'] = omp_num_threads
+except (KeyError, NameError, TypeError):
+    os.environ['MKL_NUM_THREADS'] = str(1)
+    os.environ['OMP_NUM_THREADS'] = str(1)
+
 import multiprocessing
 import numpy as np
 from pyscf.lib import direct_sum
 import time
-USE_MULTIPROCESSING = True
-NUM_PROCESSORS = 10
+
+from pseudopotential_ftqc.parameters import parameters
+from pseudopotential_ftqc.lattice import lattice
 
 def compute_Esc(sz, Cli, E, rl):
     # Determine scaled E.
@@ -154,7 +164,7 @@ def inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_s
         return max_val
     return max_val, dy, dz
 
-def lamnonloc(rl, E, g1, g2, g3, d1, d2, d3, n):
+def lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=False, NUM_PROCESSORS=30):
     # This is for computing the value of lambda for nonlocal pseudopotentials.
     # The lambda is the value in the tight case, but lamb is if we are using maxima based on the box for nu.
     N1 = 2**n[0] - 1
@@ -170,11 +180,11 @@ def lamnonloc(rl, E, g1, g2, g3, d1, d2, d3, n):
         [8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105), (32 / 3) * np.sqrt(2 / 15015)]
     ]) * np.pi**(5/4)
 
-    Esc = compute_Esc(sz, Cli, E, rl)
+    Esc = compute_Esc(sz, Cli, E, r_vec)
 
     Omega = (2 * np.pi)**3 / np.linalg.det(np.array([g1, g2, g3]))
 
-    Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, rl)
+    Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, r_vec)
 
     maxs = np.zeros((4 * N1 + 1, sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
     maxt = np.zeros((sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
@@ -186,7 +196,6 @@ def lamnonloc(rl, E, g1, g2, g3, d1, d2, d3, n):
     for nut in range(1, 4 * N1 + 2):
         nux = nut - 2 * N1 - 1
         maxt.fill(0.)
-        istart_time = time.time()
         if USE_MULTIPROCESSING:
             # Generate input for starmap
             starmap_inputs = []
@@ -203,9 +212,90 @@ def lamnonloc(rl, E, g1, g2, g3, d1, d2, d3, n):
                 for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
                     maxt[:, :, :, dy, dz] = inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift)
             maxs[nut - 1, :, :, :, :, :] = maxt[:, :, :, :, :]
-        iend_time = time.time()
-        inner_loop_times.append(iend_time - istart_time)
-        print(f"{np.mean(inner_loop_times)=}", f"{inner_loop_times[-1]}")
+
+    lambda_val, lamb = post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3)
+   
+    return lambda_val, lamb
+
+def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: int, atom_type: str,
+                          USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False):
+    n = [n1, n2, n3]
+    g1, g2, g3, d1, d2, d3 = lattice(lattice_index)
+    Z, rl, C, r_vec, E = parameters(atom_type)
+
+    N1 = 2**n[0] - 1
+    N2 = 2**n[1] - 1
+    N3 = 2**n[2] - 1
+    sz = E.shape
+    assert len(sz) == 3
+
+    # Input GTH nonlocal pseudopotential projector parameters.
+    Cli = np.array([
+        [4 * np.sqrt(2), 8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105)],
+        [8 / np.sqrt(3), 16 / np.sqrt(105), (32 / 3) / np.sqrt(1155)],
+        [8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105), (32 / 3) * np.sqrt(2 / 15015)]
+    ]) * np.pi**(5/4)
+
+    Esc = compute_Esc(sz, Cli, E, r_vec)
+
+    Omega = (2 * np.pi)**3 / np.linalg.det(np.array([g1, g2, g3]))
+
+    Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, r_vec)
+
+    maxt = np.zeros((sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
+    legendre_shift = (2 * np.arange(1, sz[0] + 1) - 1) / (4 * np.pi * Omega)
+
+    nux = nut - 2 * N1 - 1
+    if USE_MULTIPROCESSING:
+        # Generate input for starmap
+        starmap_inputs = []
+        for dy, nuy in enumerate(range(2 * N2 + 1)):
+            for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
+                starmap_inputs.append((sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift, dy, dz))
+        with multiprocessing.Pool(processes=NUM_PROCESSORS) as pool:
+            results = pool.starmap(inner_loop_q, starmap_inputs)
+        for res, dy, dz in results:
+            maxt[:, :, :, dy, dz] = res
+    else:
+        for dy, nuy in enumerate(range(2 * N2 + 1)):
+            for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
+                maxt[:, :, :, dy, dz] = inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift)
+
+    if SAVE_MAXT:
+        np.save("maxt_nut_{}_n_{}{}{}_atom_type_{}_lattice_{}.npy".format(nut, n1, n2, n3, atom_type, lattice_index), maxt)
+
+    return maxt
+
+def lamnonloc_from_maxt(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict):
+    # This is for computing the value of lambda for nonlocal pseudopotentials.
+    # The lambda is the value in the tight case, but lamb is if we are using maxima based on the box for nu.
+    N1 = 2**n[0] - 1
+    N2 = 2**n[1] - 1
+    N3 = 2**n[2] - 1
+    sz = E.shape
+    assert len(sz) == 3
+   
+    # Input GTH nonlocal pseudopotential projector parameters.
+    Cli = np.array([
+        [4 * np.sqrt(2), 8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105)],
+        [8 / np.sqrt(3), 16 / np.sqrt(105), (32 / 3) / np.sqrt(1155)],
+        [8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105), (32 / 3) * np.sqrt(2 / 15015)]
+    ]) * np.pi**(5/4)
+
+    Esc = compute_Esc(sz, Cli, E, r_vec)
+
+    Omega = (2 * np.pi)**3 / np.linalg.det(np.array([g1, g2, g3]))
+
+    Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, r_vec)
+
+    maxs = np.zeros((4 * N1 + 1, sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
+    legendre_shift = (2 * np.arange(1, sz[0] + 1) - 1) / (4 * np.pi * Omega)
+
+    inner_loop_times = []
+
+    for nut in range(1, 4 * N1 + 2):
+        nux = nut - 2 * N1 - 1
+        maxs[nut - 1, :, :, :, :, :] = maxt_dict[nut]
 
     lambda_val, lamb = post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3)
    
@@ -214,22 +304,22 @@ def lamnonloc(rl, E, g1, g2, g3, d1, d2, d3, n):
 
 
 if __name__ == "__main__":
-    from parameters import parameters
-    from lattice import lattice
+    from pseudopotential_ftqc.parameters import parameters
+    from pseudopotential_ftqc.lattice import lattice
     # single core performance
     # 5, 5, 5 is 0.1 seconds per inner q-sum , 7875 for N2, N3 vals, over 30 cores this is 0.6 hours
     # 6, 6, 6 is 1 seconds per inner q-sum, 32131 for N2, N3 vals over 30 cores this is 2.5 hours
     # 7, 7, 7 is 8 seconds per inner q-sum, 129795 for N2, N3 vals, over 30 cores this is 9 hours
     # 6, 7, 8 is 8 seconds per inner q-sum, 260355 for N2, N3 vals, over 30 cores this is 20 hours
-    n = [4, 4, 4]
+    n = [2, 2, 2]
     # N = 2**np.array(n) - 1
     # total_num_inner_loops = (2 * N[1] + 1) * (4 * N[2] + 1)
     g1, g2, g3, d1, d2, d3 = lattice(5)
-    Z, rl, C, r, E = parameters("Pd")
+    Z, rl, C, r_vec, E = parameters("Pd")
     USE_MULTIPROCESSING = True
     NUM_PROCESSORS = 30
     start_time = time.time()
-    lam0, lamm = lamnonloc(r, E, g1, g2, g3, d1, d2, d3, n)
+    lam0, lamm = lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=True, NUM_PROCESSORS=30)
     end_time = time.time()
     print(f"{(end_time - start_time)=}")
 
