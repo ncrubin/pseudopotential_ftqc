@@ -226,8 +226,8 @@ if __name__ == "__main__":
     # total_num_inner_loops = (2 * N[1] + 1) * (4 * N[2] + 1)
     g1, g2, g3, d1, d2, d3 = lattice(5)
     Z, rl, C, r, E = parameters("Pd")
-    USE_MULTIPROCESSING = False
-    NUM_PROCESSORS = 40
+    USE_MULTIPROCESSING = True
+    NUM_PROCESSORS = 30
     start_time = time.time()
     lam0, lamm = lamnonloc(r, E, g1, g2, g3, d1, d2, d3, n)
     end_time = time.time()

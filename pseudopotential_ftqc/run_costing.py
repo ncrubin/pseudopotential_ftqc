@@ -1,5 +1,5 @@
-from allcosts import allcosts
-from alllam import alllam
+from pseudopotential_ftqc.allcosts import allcosts
+from pseudopotential_ftqc.alllam import alllam
 import numpy as np
 import time
 

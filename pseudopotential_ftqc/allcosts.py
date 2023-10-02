@@ -1,7 +1,7 @@
 import numpy as np
 import math
-from parameters import parameters
-from normcost import normcost
+from pseudopotential_ftqc.parameters import parameters
+from pseudopotential_ftqc.normcost import normcost
 
 def allcosts(n, b, types, lat, order, pts, eta):
     nx = n[0]

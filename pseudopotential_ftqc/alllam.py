@@ -1,8 +1,8 @@
 import numpy as np
-from lattice import lattice
-from parameters import parameters
-from lambdaloc import lambdaloc
-from lamnonloc import lamnonloc
+from pseudopotential_ftqc.lattice import lattice
+from pseudopotential_ftqc.parameters import parameters
+from pseudopotential_ftqc.lambdaloc import lambdaloc
+from pseudopotential_ftqc.lamnonloc import lamnonloc
 
 def alllam(n, types, nonu, lat, eta):
     """
