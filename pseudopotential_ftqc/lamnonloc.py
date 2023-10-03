@@ -303,6 +303,73 @@ def lamnonloc_from_maxt(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict):
 
 
 
+def lambda_nonloc_nux_nuy_nuz_run(nux_idx: int, nuy_idx: int, nuz_idx: int,
+                                  n1: int, n2: int, n3: int,
+                                  lattice_index: int,
+                                  atom_type: str,
+                                  SAVE_RESULT=False
+                                  ):
+    n = [n1, n2, n3]
+    g1, g2, g3, d1, d2, d3 = lattice(lattice_index)
+    Z, rl, C, r_vec, E = parameters(atom_type)
+
+    N1 = 2**n[0] - 1
+    N2 = 2**n[1] - 1
+    N3 = 2**n[2] - 1
+    sz = E.shape
+    assert len(sz) == 3
+
+    # Input GTH nonlocal pseudopotential projector parameters.
+    Cli = np.array([
+        [4 * np.sqrt(2), 8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105)],
+        [8 / np.sqrt(3), 16 / np.sqrt(105), (32 / 3) / np.sqrt(1155)],
+        [8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105), (32 / 3) * np.sqrt(2 / 15015)]
+    ]) * np.pi**(5/4)
+
+    Esc = compute_Esc(sz, Cli, E, r_vec)
+
+    Omega = (2 * np.pi)**3 / np.linalg.det(np.array([g1, g2, g3]))
+
+    Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, r_vec)
+    nux = nux_idx - 2 * N1 - 1
+    nuy = nuy_idx
+    nuz = nuz_idx - 2 * N3
+    legendre_shift = (2 * np.arange(1, sz[0] + 1) - 1) / (4 * np.pi * Omega)
+    result = inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift)
+    if SAVE_RESULT:
+        np.save("nx_{}_ny_{}_nz_{}_n_{}{}{}_atom_type_{}_lattice_{}.npy".format(nux_idx, nuy_idx, nuz_idx, n1, n2, n3, atom_type, lattice_index), result)
+    return result
+
+
+def lamnonloc_from_nxnynz(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict):
+    # This is for computing the value of lambda for nonlocal pseudopotentials.
+    # The lambda is the value in the tight case, but lamb is if we are using maxima based on the box for nu.
+    N1 = 2**n[0] - 1
+    N2 = 2**n[1] - 1
+    N3 = 2**n[2] - 1
+    sz = E.shape
+    assert len(sz) == 3
+    # Input GTH nonlocal pseudopotential projector parameters.
+    Cli = np.array([
+        [4 * np.sqrt(2), 8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105)],
+        [8 / np.sqrt(3), 16 / np.sqrt(105), (32 / 3) / np.sqrt(1155)],
+        [8 * np.sqrt(2 / 15), (16 / 3) * np.sqrt(2 / 105), (32 / 3) * np.sqrt(2 / 15015)]
+    ]) * np.pi**(5/4)
+    Esc = compute_Esc(sz, Cli, E, r_vec)
+    maxs = np.zeros((4 * N1 + 1, sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
+    for nut in range(1, 4 * N1 + 2):
+        nux = nut - 2 * N1 - 1
+        for dy, nuy in enumerate(range(2 * N2 + 1)):
+            for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
+                maxs[nut - 1, :, :, :, dy, dz] = maxt_dict[(nut, dy, dz)]
+
+    lambda_val, lamb = post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3)
+   
+    return lambda_val, lamb
+
+
+
+
 if __name__ == "__main__":
     from pseudopotential_ftqc.parameters import parameters
     from pseudopotential_ftqc.lattice import lattice
