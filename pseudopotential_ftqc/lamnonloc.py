@@ -10,12 +10,13 @@ except (KeyError, NameError, TypeError):
     os.environ['OMP_NUM_THREADS'] = str(1)
 
 import multiprocessing
-import numpy as np
-from pyscf.lib import direct_sum
 import time
 
-from pseudopotential_ftqc.parameters import parameters
+import numpy as np
 from pseudopotential_ftqc.lattice import lattice
+from pseudopotential_ftqc.parameters import parameters
+from pyscf.lib import direct_sum
+
 
 def compute_Esc(sz, Cli, E, rl):
     # Determine scaled E.
@@ -218,7 +219,7 @@ def lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=False, NU
     return lambda_val, lamb
 
 def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: int, atom_type: str,
-                          USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False):
+                          USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False, PATH="."):
     n = [n1, n2, n3]
     g1, g2, g3, d1, d2, d3 = lattice(lattice_index)
     Z, rl, C, r_vec, E = parameters(atom_type)
@@ -262,7 +263,7 @@ def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: in
                 maxt[:, :, :, dy, dz] = inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift)
 
     if SAVE_MAXT:
-        np.save("maxt_nut_{}_n_{}{}{}_atom_type_{}_lattice_{}.npy".format(nut, n1, n2, n3, atom_type, lattice_index), maxt)
+        np.save("{}/maxt_nut_{}_n_{}{}{}_atom_type_{}_lattice_{}.npy".format(PATH, nut, n1, n2, n3, atom_type, lattice_index), maxt)
 
     return maxt
 
@@ -371,8 +372,9 @@ def lamnonloc_from_nxnynz(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict):
 
 
 if __name__ == "__main__":
-    from pseudopotential_ftqc.parameters import parameters
     from pseudopotential_ftqc.lattice import lattice
+    from pseudopotential_ftqc.parameters import parameters
+
     # single core performance
     # 5, 5, 5 is 0.1 seconds per inner q-sum , 7875 for N2, N3 vals, over 30 cores this is 0.6 hours
     # 6, 6, 6 is 1 seconds per inner q-sum, 32131 for N2, N3 vals over 30 cores this is 2.5 hours
