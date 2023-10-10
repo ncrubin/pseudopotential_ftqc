@@ -11,7 +11,7 @@ from pseudopotential_ftqc.lamnonloc import (lamnonloc,
 def run_maxt_test(n, atom_type, lattice_type):
     g1, g2, g3, d1, d2, d3 = lattice(lattice_type)
     Z, rl, C, r_vec, E = parameters(atom_type)
-    lam0, lamm = lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=False)
+    lam0, lamm = lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=True)
 
     N1 = 2**n[0] - 1
     maxt_dict = {}

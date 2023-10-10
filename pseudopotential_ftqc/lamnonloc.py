@@ -11,7 +11,7 @@ except (KeyError, NameError, TypeError):
 
 import multiprocessing
 import numpy as np
-from pyscf.lib import direct_sum
+from pyscf.lib import direct_sum, cartesian_prod
 import time
 
 from pseudopotential_ftqc.parameters import parameters
@@ -70,6 +70,7 @@ def compute_Fli(sz, N1, N2, N3, g1, g2, g3, rl):
 
 def post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3):
     lambda_val = np.zeros((sz[0], sz[1], sz[2]))
+    lambda_val_ncr = np.zeros((sz[0], sz[1], sz[2]))
     mumax = max(n[0] + d1, n[1] + d2, n[2] + d3) + 2
     maxy_val = np.zeros((sz[0], sz[1], sz[2], mumax))
     nums = np.zeros(mumax)
@@ -77,26 +78,60 @@ def post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3):
     D2 = 2**d2
     D3 = 2**d3
 
-    for nux in range(-2 * N1, 2 * N1 + 1):
-        for nuy in range(-2 * N2, 2 * N2 + 1):
-            for nuz in range(-2 * N3, 2 * N3 + 1):
-                mut = max(abs(nux * D1), abs(nuy * D2), abs(nuz * D3))
-                if mut == 0:
-                    mu = 1
-                else:
-                    mu = int(np.floor(np.log2(mut))) + 2
-                
-                nums[mu - 1] += 1
-                
-                for el in range(sz[0]):
-                    for ii in range(sz[1]):
-                        for jj in range(sz[2]):
-                            if Esc[el, ii, jj] != 0:
-                                tmp = maxs[nux + 2 * N1, el, ii, jj, abs(nuy), nuz + 2 * N3]
-                                lambda_val[el, ii, jj] += tmp
-                                if tmp > maxy_val[el, ii, jj, mu - 1]:
-                                    maxy_val[el, ii, jj, mu - 1] = tmp
-    
+    nux_vals = np.arange(-2 * N1, 2 * N1 + 1, dtype=int)
+    nuy_vals = np.arange(-2 * N2, 2 * N2 + 1, dtype=int)
+    nuz_vals = np.arange(-2 * N3, 2 * N3 + 1, dtype=int)
+
+    mut_xyz = np.zeros((4 * N1 + 1, 4 * N2 + 1, 4 * N3 + 1), dtype=int)
+    d1_nux_vals = np.abs(D1 * nux_vals)
+    d2_nuy_vals = np.abs(D2 * nuy_vals)
+    d3_nuz_vals = np.abs(D3 * nuz_vals)
+    for dx, dnux in enumerate(d1_nux_vals):
+        for dy, dnuy in enumerate(d2_nuy_vals):
+            for dz, dnuz in enumerate(d3_nuz_vals):
+                mut_xyz[dx, dy, dz] = max(dnux, dnuy, dnuz)
+
+    zero_mask = mut_xyz != 0
+    mu_xyz = np.floor(np.log2(mut_xyz, where=zero_mask, out=np.ones_like(mut_xyz, dtype=float)))
+    mu_xyz = np.asarray(mu_xyz, dtype=int) 
+    mu_xyz = np.where(zero_mask, mu_xyz + 2, np.ones_like(mut_xyz, dtype=int))
+
+    dx_nux_vals = nux_vals + 2 * N1
+    dy_nuy_vals = np.abs(nuy_vals)
+    dz_nuz_vals = nuz_vals + 2 * N3
+
+
+    Esc_mask = Esc[:sz[0], :sz[1], :sz[2]] != 0.
+    tmaxs = maxs[:, :sz[0], :sz[1], :sz[2], :, :]
+
+    nums_ncr = np.zeros_like(nums)
+    for dx, nux in enumerate(range(-2 * N1, 2 * N1 + 1)):
+        for dy, nuy in enumerate(range(-2 * N2, 2 * N2 + 1)):
+            for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
+                nums_ncr[mu_xyz[dx, dy, dz] - 1] += 1
+
+    abs_dy = slice(0, 2 * N2 + 1)
+    outer_ncr_tmp1 = np.einsum('xlijyz,lij->xlijyz', tmaxs[:, :, :, :, abs_dy, :], Esc_mask)
+    lambda_val_ncr = np.sum(outer_ncr_tmp1, axis=(0,4,5))
+
+    abs_dy = slice(1, 2 * N2 + 1) # don't count zero twice!
+    outer_ncr_tmp2 = np.einsum('xlijyz,lij->xlijyz', tmaxs[:, :, :, :, abs_dy, :], Esc_mask)
+    lambda_val_ncr += np.sum(outer_ncr_tmp2, axis=(0,4,5))
+
+    for dx, nux in enumerate(range(-2 * N1, 2 * N1 + 1)):
+        for dy, nuy in enumerate(range(-2 * N2, 2 * N2 + 1)):
+            for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
+                mu_idx = mu_xyz[dx, dy, dz] - 1
+                ncr_tmp = outer_ncr_tmp1[dx, :, :, :, dy_nuy_vals[dy], dz]
+                mask = ncr_tmp > maxy_val[:, :, :, mu_idx]
+                test_maxy_val = np.where(mask, ncr_tmp, maxy_val[:, :, :, mu_idx])
+                maxy_val[:, :, :, mu_idx] = test_maxy_val
+
+    # assert np.allclose(lambda_val_ncr, lambda_val)
+    lambda_val = lambda_val_ncr
+
+    nums = nums_ncr
+
     for el in range(sz[0]):
         for ii in range(sz[1]):
             for jj in range(ii + 1, sz[2]):
@@ -109,8 +144,9 @@ def post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3):
         for ii in range(sz[1]):
             for jj in range(sz[2]):
                 lamb[el, jj, ii] = np.sum(nums * maxy_val[el, ii, jj, :])
-
+    
     return lambda_val, lamb
+
 
 def inner_loop_q(sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift, dy=None, dz=None):
     # THIS IS ALL FOR VECTORIZING mx, my, mz
@@ -190,8 +226,6 @@ def lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=False, NU
     maxt = np.zeros((sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
     legendre_shift = (2 * np.arange(1, sz[0] + 1) - 1) / (4 * np.pi * Omega)
 
-    inner_loop_times = []
-
     # We loop over all nu values, but only use non-negative nu_y because it must be symmetric under reflection about all three.
     for nut in range(1, 4 * N1 + 2):
         nux = nut - 2 * N1 - 1
@@ -218,7 +252,7 @@ def lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=False, NU
     return lambda_val, lamb
 
 def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: int, atom_type: str,
-                          USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False):
+                          USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False, debug=False):
     n = [n1, n2, n3]
     g1, g2, g3, d1, d2, d3 = lattice(lattice_index)
     Z, rl, C, r_vec, E = parameters(atom_type)
@@ -240,7 +274,11 @@ def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: in
 
     Omega = (2 * np.pi)**3 / np.linalg.det(np.array([g1, g2, g3]))
 
+    start_time = time.time()
     Fli = compute_Fli(sz, N1, N2, N3, g1, g2, g3, r_vec)
+    end_time = time.time()
+    if debug:
+        print("compute_Fli runtime = ", f"{(end_time - start_time)=}")
 
     maxt = np.zeros((sz[0], sz[1], sz[2], 2 * N2 + 1, 4 * N3 + 1))
     legendre_shift = (2 * np.arange(1, sz[0] + 1) - 1) / (4 * np.pi * Omega)
@@ -249,13 +287,28 @@ def lambda_nonloc_nux_run(nut: int, n1: int, n2: int, n3: int, lattice_index: in
     if USE_MULTIPROCESSING:
         # Generate input for starmap
         starmap_inputs = []
+        start_time = time.time()
         for dy, nuy in enumerate(range(2 * N2 + 1)):
             for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
                 starmap_inputs.append((sz, Esc, Fli, nux, nuy, nuz, N1, N2, N3, g1, g2, g3, legendre_shift, dy, dz))
+        end_time = time.time()
+        if debug:
+            print("starmap input gen runtime ", f"{(end_time - start_time)=}")
+        
+        start_time = time.time()
         with multiprocessing.Pool(processes=NUM_PROCESSORS) as pool:
             results = pool.starmap(inner_loop_q, starmap_inputs)
+        end_time = time.time()
+        if debug:
+            print("multiprocess runtime ", f"{(end_time - start_time)=}")
+
+        start_time = time.time()
         for res, dy, dz in results:
             maxt[:, :, :, dy, dz] = res
+        end_time = time.time()
+        if debug:
+            print("result storage runtime ", f"{(end_time - start_time)=}")
+
     else:
         for dy, nuy in enumerate(range(2 * N2 + 1)):
             for dz, nuz in enumerate(range(-2 * N3, 2 * N3 + 1)):
@@ -373,22 +426,56 @@ def lamnonloc_from_nxnynz(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict):
 if __name__ == "__main__":
     from pseudopotential_ftqc.parameters import parameters
     from pseudopotential_ftqc.lattice import lattice
+    import pickle
     # single core performance
     # 5, 5, 5 is 0.1 seconds per inner q-sum , 7875 for N2, N3 vals, over 30 cores this is 0.6 hours
     # 6, 6, 6 is 1 seconds per inner q-sum, 32131 for N2, N3 vals over 30 cores this is 2.5 hours
     # 7, 7, 7 is 8 seconds per inner q-sum, 129795 for N2, N3 vals, over 30 cores this is 9 hours
     # 6, 7, 8 is 8 seconds per inner q-sum, 260355 for N2, N3 vals, over 30 cores this is 20 hours
-    n = [2, 2, 2]
+    n = [7, 6, 6]
     # N = 2**np.array(n) - 1
     # total_num_inner_loops = (2 * N[1] + 1) * (4 * N[2] + 1)
-    g1, g2, g3, d1, d2, d3 = lattice(5)
-    Z, rl, C, r_vec, E = parameters("Pd")
-    USE_MULTIPROCESSING = True
-    NUM_PROCESSORS = 30
+    # g1, g2, g3, d1, d2, d3 = lattice(5)
+    # Z, rl, C, r_vec, E = parameters("Pd")
+    # USE_MULTIPROCESSING = True
+    # NUM_PROCESSORS = 30
     start_time = time.time()
-    lam0, lamm = lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=True, NUM_PROCESSORS=30)
+    # lam0, lamm = lamnonloc(r_vec, E, g1, g2, g3, d1, d2, d3, n, USE_MULTIPROCESSING=True, NUM_PROCESSORS=30)
+    # end_time = time.time()
+    # print(f"{(end_time - start_time)=}")
+
+    lattice_type = 5
+    atom_type = "Pd"
+    g1, g2, g3, d1, d2, d3 = lattice(lattice_type)
+    Z, rl, C, r_vec, E = parameters(atom_type)
+    N1 = 2**n[0] - 1
+    # for nut in range(1, 4 * N1 + 2):
+    nut = (4 * N1 + 2) // 2
+    start_time = time.time()
+    res = lambda_nonloc_nux_run(nut=nut, n1=n[0], n2=n[1], n3=n[2], lattice_index=lattice_type, atom_type=atom_type,
+                                                USE_MULTIPROCESSING=True, NUM_PROCESSORS=60, SAVE_MAXT=False, debug=True)
     end_time = time.time()
     print(f"{(end_time - start_time)=}")
+    exit()
 
 
-     
+    # g1, g2, g3, d1, d2, d3 = lattice(lattice_type)
+    # Z, rl, C, r_vec, E = parameters(atom_type)
+    # start_time1 = time.time()
+    # maxt_dict = {}
+    # for nut in range(1, 4 * N1 + 2):
+    #     maxt_dict[nut] = lambda_nonloc_nux_run(nut=nut, n1=n[0], n2=n[1], n3=n[2], lattice_index=lattice_type, atom_type=atom_type,
+    #                                             USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False)
+    # end_time1 = time.time()
+    # print(f"{(end_time1 - start_time1)=}")
+    # with open('maxt_dict_{}{}{}.pickle'.format(n[0], n[1], n[2]), 'wb') as handle:
+    #     pickle.dump(maxt_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # exit()
+    # with open('maxt_dict_{}{}{}.pickle'.format(n[0], n[1], n[2]), 'rb') as handle:
+    #     maxt_dict = pickle.load(handle)
+
+    # start_time2 = time.time()
+    # lam0_test, lamm_test = lamnonloc_from_maxt(r_vec, E, g1, g2, g3, d1, d2, d3, n, maxt_dict)
+    # end_time2 = time.time()
+    # print(f"{(end_time2 - start_time2)=}")

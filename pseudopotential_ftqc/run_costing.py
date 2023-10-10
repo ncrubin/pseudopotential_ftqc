@@ -8,6 +8,8 @@ if __name__ == "__main__":
     assert np.isclose(laml, 84191.9137306989287)
     assert np.isclose(lamT, 237.5836178849430)
     assert np.isclose(lamV, 36535.0271848313787)
+    print(lamnl)
+    print(261975.9651466767536)
     assert np.isclose(lamnl, 261975.9651466767536)
 
     [laml, lamnl, lamT, lamV] = alllam([2, 4, 3],["Li", "Mn", "O"],[8, 16, 48], 10, 408)
