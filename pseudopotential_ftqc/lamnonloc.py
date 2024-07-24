@@ -1,4 +1,5 @@
 import os
+import numba
 
 try:
     mkl_num_threads = os.environ.get('MKL_NUM_THREADS')
@@ -124,8 +125,11 @@ def post_process_maxs(sz, n, N1, N2, N3, Esc, maxs, d1, d2, d3):
                 mu_idx = mu_xyz[dx, dy, dz] - 1
                 ncr_tmp = outer_ncr_tmp1[dx, :, :, :, dy_nuy_vals[dy], dz]
                 mask = ncr_tmp > maxy_val[:, :, :, mu_idx]
-                test_maxy_val = np.where(mask, ncr_tmp, maxy_val[:, :, :, mu_idx])
-                maxy_val[:, :, :, mu_idx] = test_maxy_val
+                # test_maxy_val = np.where(mask, ncr_tmp, maxy_val[:, :, :, mu_idx])
+                # maxy_val[:, :, :, mu_idx] = test_maxy_val
+                maxy_val[:, :, :, mu_idx] = np.where(mask, ncr_tmp, maxy_val[:, :, :, mu_idx])
+
+
 
     # assert np.allclose(lambda_val_ncr, lambda_val)
     lambda_val = lambda_val_ncr
@@ -453,7 +457,7 @@ if __name__ == "__main__":
     nut = (4 * N1 + 2) // 2
     start_time = time.time()
     res = lambda_nonloc_nux_run(nut=nut, n1=n[0], n2=n[1], n3=n[2], lattice_index=lattice_type, atom_type=atom_type,
-                                                USE_MULTIPROCESSING=True, NUM_PROCESSORS=60, SAVE_MAXT=False, debug=True)
+                                                USE_MULTIPROCESSING=True, NUM_PROCESSORS=30, SAVE_MAXT=False, debug=True)
     end_time = time.time()
     print(f"{(end_time - start_time)=}")
     exit()

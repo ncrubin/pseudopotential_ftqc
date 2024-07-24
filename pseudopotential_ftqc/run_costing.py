@@ -4,12 +4,16 @@ import numpy as np
 import time
 
 if __name__ == "__main__":
+    cst = allcosts([5, 5, 5], 20, ["Li", "Ni", "O"], 3, 1, 256, 92)
+    print(cst)
+    exit()
+    cst = allcosts([1, 2, 3],20,["Pd"],5,1,256, 270)
+    print(cst)
+    exit()
     [laml, lamnl, lamT, lamV] = alllam([2, 1, 3],["Li", "Mn", "F", "O"],[12, 16, 16, 32], 10, 428)
     assert np.isclose(laml, 84191.9137306989287)
     assert np.isclose(lamT, 237.5836178849430)
     assert np.isclose(lamV, 36535.0271848313787)
-    print(lamnl)
-    print(261975.9651466767536)
     assert np.isclose(lamnl, 261975.9651466767536)
 
     [laml, lamnl, lamT, lamV] = alllam([2, 4, 3],["Li", "Mn", "O"],[8, 16, 48], 10, 408)
@@ -18,7 +22,9 @@ if __name__ == "__main__":
     assert np.isclose(lamV, 231827.6938349053089)
     assert np.isclose(lamnl, 2797454.0732959737070)
 
-    # cst = allcosts([1, 2, 3],20,["Li", "Mn", "Ni", "O"],11,1,256, 468)
+    cst = allcosts([1, 2, 3],20,["Li", "Mn", "Ni", "O"],11,1,256, 468)
+    print(cst)
+    exit()
     [laml, lamnl, lamT, lamV] = alllam([1, 2, 3],["Pd"],[27],5,270)
     assert np.isclose(laml, 47531.7856667841552)
     assert np.isclose(lamT, 55.5772116413959)

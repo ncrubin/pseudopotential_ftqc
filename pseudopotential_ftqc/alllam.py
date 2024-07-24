@@ -44,7 +44,12 @@ def alllam(n, types, nonu, lat, eta):
     v1 = (2**n[0] - 2) * g1
     v2 = (2**n[1] - 2) * g2
     v3 = (2**n[2] - 2) * g3
-    lamT = (eta / 8) * max(np.linalg.norm(np.array([v1 + v2 + v3, v1 + v2 - v3, v1 - v2 + v3, v1 - v2 - v3]), axis=1))
+    # lamT = (eta / 8) * max(np.linalg.norm(np.array([v1 + v2 + v3, v1 + v2 - v3, v1 - v2 + v3, v1 - v2 - v3]), axis=1))
+    lamT = (eta / 8) * max([np.linalg.norm(np.array([v1 + v2 + v3]))**2, 
+                            np.linalg.norm(np.array([v1 + v2 - v3]))**2, 
+                            np.linalg.norm(np.array([v1 - v2 + v3]))**2, 
+                            np.linalg.norm(np.array([v1 - v2 - v3]))**2]) # , axis=1))
+
 
     N1 = 2**n[0] - 1
     N2 = 2**n[1] - 1
@@ -54,7 +59,8 @@ def alllam(n, types, nonu, lat, eta):
     for nx in range(-N1, N1 + 1):
         for ny in range(-N2, N2 + 1):
             for nz in range(-N3, N3 + 1):
-                tmp = np.linalg.norm(np.array([nx * g1 + ny * g2 + nz * g3]))
+                # tmp = np.linalg.norm(np.array([nx * g1 + ny * g2 + nz * g3]))
+                tmp = np.linalg.norm(np.array([nx * g1 + ny * g2 + nz * g3]))**2
                 if tmp > 0:
                     vsum += 1 / tmp
 

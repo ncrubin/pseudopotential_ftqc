@@ -25,7 +25,7 @@ def normcost(n = None,b = None,num = None):
     ny = n[1]
     nz = n[2]
     if num == 1:
-        nxy = np.amax(nx,ny)
+        nxy = np.amax([nx,ny])
         cst = nxy ** 2 + nz ** 2 + 2 * nx * ny + 2 * nxy * nz
         cst = cst + 2 * nxy * (nxy + b) + 2 * nz * (nz + b) + (nx + ny) ** 2 / 2 + (nx + ny) * b
     elif num == 4:
@@ -39,7 +39,7 @@ def normcost(n = None,b = None,num = None):
         cst = (nx + ny) ** 2 + nz ** 2
         cst = cst + 2 * (nx ** 2 + ny ** 2 + nz ** 2) + 2 * b * (nx + ny + nz)
     elif (num == 5) or (num == 6) or (num == 7) or (num == 8) or (num == 9) or (num == 14):
-        cst = np.amax(nx,ny) ** 2 + nz ** 2 + 2 * nx * ny + 2 * nz * (nz + b)
+        cst = np.amax([nx,ny]) ** 2 + nz ** 2 + 2 * nx * ny + 2 * nz * (nz + b)
     elif (num == 12):
         cst = (nx ** 2 + ny ** 2 + nz ** 2) + 2 * nx * (nx + b)
     elif (num == 15):

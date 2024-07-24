@@ -1,5 +1,5 @@
 import numpy as np
-from numpy_helper import cartesian_prod
+from pyscf.lib.numpy_helper import cartesian_prod
 
 def lambdaloc(rloc, g1, g2, g3, n):
     # This is for computing the value of lambda for local pseudopotentials.
